@@ -15,8 +15,13 @@
         }
         @keyframes flashAnimation {
             0% { opacity: 1; }
-            50% { opacity: 0; background-color: white; }
+            50% { opacity: 0.3; background-color: white; }
             100% { opacity: 1; }
+        }
+        /* Garante que a caixa de vídeo não suma antes da câmera ligar */
+        #reader {
+            width: 100%;
+            min-height: 300px;
         }
     </style>
 </head>
@@ -75,7 +80,7 @@
             osc.stop(ctx.currentTime + 0.15);
         }
 
-        // Seleciona o arquivo .txt
+        // Seleciona o arquivo .txt e liga a câmera
         document.getElementById('btn-iniciar-arquivo').addEventListener('click', async () => {
             try {
                 fileHandle = await window.showSaveFilePicker({
@@ -92,11 +97,11 @@
 
                 iniciarCamera();
             } catch (err) {
-                console.error("Cancelado.", err);
+                console.error("Seleção de arquivo cancelada.", err);
             }
         });
 
-        // Inicia a câmera direto em HD
+        // Inicia a câmera (Corrigido: Junção do PC + HD no mesmo parâmetro)
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
             
@@ -105,7 +110,9 @@
                 qrbox: { width: 350, height: 150 }
             };
 
+            // A MÁGICA: Informa que é uma webcam de PC ("user") E exige a resolução HD ao mesmo tempo
             const restricoes = {
+                facingMode: "user",
                 width: { ideal: 1920 },
                 height: { ideal: 1080 }
             };
@@ -117,24 +124,21 @@
                     ultimoCodigoBarras = decodedText;
                     processarLeitura(decodedText);
                 },
-                () => { /* Ignora ausência de código */ }
+                () => { /* Ignora ausência de código em tempo real */ }
             ).catch(err => {
-                // Fallback para webcams de PC
-                html5QrcodeScanner.start({ facingMode: "user" }, config, 
-                    (text) => { ultimoCodigoBarras = text; processarLeitura(text); }, 
-                    () => {}
-                );
+                console.error("Erro ao iniciar a câmera: ", err);
+                alert("Erro ao ligar a lente. Verifique as permissões. Detalhe: " + err);
             });
         }
 
-        // Função que tira a foto (flash) e processa
+        // Função que tira a foto (flash) sem pausar o vídeo e processa o texto
         async function processarLeitura(codigoBarras) {
             if (isProcessing) return; 
             isProcessing = true;
             
             tocarBip();
             
-            // Efeito de Flash na câmera (Tirar Foto) sem pausar o vídeo
+            // Efeito de Flash na câmera (Tirar Foto)
             const videoContainer = document.getElementById('reader-container');
             videoContainer.classList.add('flash-effect');
             setTimeout(() => videoContainer.classList.remove('flash-effect'), 300);
@@ -143,17 +147,17 @@
             statusOcr.classList.remove('hidden');
 
             try {
-                // Captura o frame exato do vídeo instantaneamente
+                // Captura a foto da webcam com ela rodando
                 const video = document.querySelector('#reader video');
                 const canvas = document.getElementById('canvas-foto');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Executa OCR em segundo plano
+                // Executa OCR na foto tirada
                 const { data: { text } } = await Tesseract.recognize(canvas, 'por');
 
-                // Regex para capturar código numérico curto
+                // Procura o código numérico curto (3 ou 4 dígitos)
                 const matchNumeros = text.match(/\b\d{3,4}\b/);
                 const codigoCurto = matchNumeros ? matchNumeros[0] : "SEM-COD";
 
@@ -172,8 +176,8 @@
             } catch (error) {
                 console.error("Erro OCR:", error);
             } finally {
-                // Trava novas leituras por 2.5 segundos para dar tempo de tirar o produto da frente,
-                // mas A CÂMERA CONTINUA LIGADA E FOCANDO O TEMPO TODO.
+                // Trava o scanner por 2.5 segundos para você ter tempo de tirar o produto da frente
+                // A CÂMERA CONTINUA LIGADA E FILMANDO NORMALMENTE.
                 setTimeout(() => {
                     statusOcr.classList.add('hidden');
                     isProcessing = false;
@@ -181,10 +185,10 @@
             }
         }
 
-        // Botão Manual e Tecla Espaço para "Tirar Foto" à força
+        // Eventos do Botão Manual e Tecla Espaço (Caso o código de barras falhe)
         document.getElementById('btn-foto-manual').addEventListener('click', () => {
             if (!fileHandle) return alert("Abra o arquivo de inventário primeiro.");
-            processarLeitura(ultimoCodigoBarras); // Usa o último código de barras que a câmera viu
+            processarLeitura(ultimoCodigoBarras);
         });
 
         window.addEventListener('keydown', (e) => {
@@ -194,7 +198,7 @@
             }
         });
 
-        // Salvar no arquivo
+        // Salvar sorrateiramente no arquivo .txt
         async function salvarNoArquivo(texto) {
             if (!fileHandle) return;
             const writable = await fileHandle.createWritable({ keepExistingData: true });
