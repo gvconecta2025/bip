@@ -76,17 +76,33 @@
             }
         });
 
-        // 2. Iniciar a Webcam (Otimizada para a Logitech)
+        // 2. Iniciar a Webcam (Forçando alta resolução para a Logitech)
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
-            const config = { fps: 15, qrbox: { width: 250, height: 150 } };
+            
+            // Caixa de leitura mais larga (ideal para códigos de barras compridos)
+            const config = { 
+                fps: 15, 
+                qrbox: { width: 350, height: 150 },
+                aspectRatio: 1.777778 // Proporção 16:9
+            };
+
+            // Força o navegador a extrair o máximo da C930e (HD ou FullHD)
+            const constraints = {
+                facingMode: "environment",
+                width: { min: 1280, ideal: 1920 },
+                height: { min: 720, ideal: 1080 }
+            };
 
             html5QrcodeScanner.start(
-                { facingMode: "environment" }, // Usa a câmera traseira/principal
+                constraints,
                 config,
                 onScanSuccess,
-                (errorMessage) => { /* Ignora erros de frame sem código */ }
-            ).catch(err => console.error("Erro ao iniciar câmera:", err));
+                (errorMessage) => { /* Silencia os erros contínuos de "código não encontrado" */ }
+            ).catch(err => {
+                console.error("Erro ao iniciar câmera:", err);
+                alert("Verifique se a câmera está sendo usada por outro app ou se você negou as permissões.");
+            });
         }
 
         // 3. Fluxo principal quando encontra um código de barras
