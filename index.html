@@ -43,7 +43,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Área da Câmera -->
             <div class="relative">
-                <h2 class="text-lg font-semibold mb-2">Câmera (Foco Contínuo)</h2>
+                <h2 class="text-lg font-semibold mb-2">Câmera (Foco Contínuo em HD)</h2>
                 <div id="reader-container" class="w-full bg-black rounded overflow-hidden shadow-inner relative">
                     <div id="reader"></div>
                 </div>
@@ -101,24 +101,25 @@
             }
         });
 
-        // Inicia a câmera (Corrigido: Junção do PC + HD no mesmo parâmetro)
+        // Inicia a câmera com as regras corrigidas
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
             
+            // O primeiro parâmetro (Obrigatório ter apenas UMA chave, o erro foi aqui)
+            const cameraConfig = { facingMode: "user" };
+
+            // O segundo parâmetro (Aqui é onde as resoluções de Alta Definição devem ficar)
             const config = { 
                 fps: 15, 
-                qrbox: { width: 350, height: 150 }
-            };
-
-            // A MÁGICA: Informa que é uma webcam de PC ("user") E exige a resolução HD ao mesmo tempo
-            const restricoes = {
-                facingMode: "user",
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
+                qrbox: { width: 350, height: 150 },
+                videoConstraints: {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
             };
 
             html5QrcodeScanner.start(
-                restricoes,
+                cameraConfig,
                 config,
                 (decodedText) => {
                     ultimoCodigoBarras = decodedText;
@@ -127,7 +128,7 @@
                 () => { /* Ignora ausência de código em tempo real */ }
             ).catch(err => {
                 console.error("Erro ao iniciar a câmera: ", err);
-                alert("Erro ao ligar a lente. Verifique as permissões. Detalhe: " + err);
+                alert("Erro ao ligar a lente. Detalhe: " + err);
             });
         }
 
