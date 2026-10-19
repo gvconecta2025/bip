@@ -4,30 +4,46 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventário Inteligente - Loja</title>
-    <!-- Tailwind para um aspecto limpo e profissional -->
+    <!-- Tailwind para visual limpo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Bibliotecas de Leitura de Código de Barras e OCR -->
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        /* Efeito de Flash da Câmera */
+        .flash-effect {
+            animation: flashAnimation 0.3s ease-out;
+        }
+        @keyframes flashAnimation {
+            0% { opacity: 1; }
+            50% { opacity: 0; background-color: white; }
+            100% { opacity: 1; }
+        }
+    </style>
 </head>
 <body class="bg-gray-50 p-6 font-sans">
     <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
         <h1 class="text-2xl font-bold text-gray-800 mb-4">Scanner de Inventário</h1>
         
-        <div class="mb-6">
-            <button id="btn-iniciar-arquivo" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full md:w-auto">
-                1. Abrir Arquivo de Inventário (.txt)
+        <div class="mb-6 flex flex-col md:flex-row gap-4">
+            <button id="btn-iniciar-arquivo" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded shadow">
+                1. Abrir Arquivo (.txt)
             </button>
-            <p class="text-sm text-gray-500 mt-2" id="status-arquivo">Nenhum arquivo selecionado.</p>
+            
+            <button id="btn-foto-manual" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded shadow flex-1 opacity-50 cursor-not-allowed" disabled>
+                📸 2. Tirar Foto Manualmente (Espaço)
+            </button>
         </div>
+        <p class="text-sm text-gray-500 mb-6" id="status-arquivo">Nenhum arquivo selecionado.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Área da Câmera -->
-            <div>
-                <h2 class="text-lg font-semibold mb-2">Câmera (Logitech C930e)</h2>
-                <div id="reader" class="w-full bg-black rounded overflow-hidden shadow-inner"></div>
+            <div class="relative">
+                <h2 class="text-lg font-semibold mb-2">Câmera (Foco Contínuo)</h2>
+                <div id="reader-container" class="w-full bg-black rounded overflow-hidden shadow-inner relative">
+                    <div id="reader"></div>
+                </div>
                 <div id="status-ocr" class="mt-2 text-sm text-blue-600 font-semibold animate-pulse hidden">
-                    Processando o texto da embalagem... Aguarde.
+                    Processando imagem... Aguarde.
                 </div>
             </div>
 
@@ -39,15 +55,16 @@
         </div>
     </div>
 
-    <!-- Canvas oculto para captar a fotografia do vídeo para o OCR -->
+    <!-- Canvas oculto para tirar a foto do vídeo -->
     <canvas id="canvas-foto" class="hidden"></canvas>
 
     <script>
         let fileHandle;
         let html5QrcodeScanner;
         let isProcessing = false;
+        let ultimoCodigoBarras = "COD-MANUAL";
 
-        // Função para emitir o aviso sonoro (Bip)
+        // Emite o Bip
         function tocarBip() {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = ctx.createOscillator();
@@ -58,7 +75,7 @@
             osc.stop(ctx.currentTime + 0.15);
         }
 
-        // 1. Ligar ao arquivo de texto no computador
+        // Seleciona o arquivo .txt
         document.getElementById('btn-iniciar-arquivo').addEventListener('click', async () => {
             try {
                 fileHandle = await window.showSaveFilePicker({
@@ -68,13 +85,18 @@
                 document.getElementById('status-arquivo').innerText = `Gravando em: ${fileHandle.name}`;
                 document.getElementById('status-arquivo').classList.add('text-green-600');
                 
+                // Ativa o botão de foto manual
+                const btnFoto = document.getElementById('btn-foto-manual');
+                btnFoto.classList.remove('opacity-50', 'cursor-not-allowed');
+                btnFoto.disabled = false;
+
                 iniciarCamera();
             } catch (err) {
-                console.error("Seleção de arquivo cancelada.", err);
+                console.error("Cancelado.", err);
             }
         });
 
-        // 2. Iniciar a Webcam (Corrigido: Forçando HD real no parâmetro certo)
+        // Inicia a câmera direto em HD
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
             
@@ -83,74 +105,96 @@
                 qrbox: { width: 350, height: 150 }
             };
 
-            // O segredo da qualidade: Passar a resolução máxima exigida direto no primeiro parâmetro
-            const restricoesCamera = {
-                width: { min: 1280, ideal: 1920 },
-                height: { min: 720, ideal: 1080 }
+            const restricoes = {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             };
 
             html5QrcodeScanner.start(
-                restricoesCamera,
+                restricoes,
                 config,
-                onScanSuccess,
-                (errorMessage) => { /* Ignora avisos de ausência de código */ }
+                (decodedText) => {
+                    ultimoCodigoBarras = decodedText;
+                    processarLeitura(decodedText);
+                },
+                () => { /* Ignora ausência de código */ }
             ).catch(err => {
-                console.warn("Falha ao forçar 1080p, tentando fallback de segurança...", err);
-                // Fallback caso a porta USB esteja limitando a banda
-                html5QrcodeScanner.start({ facingMode: "user" }, config, onScanSuccess, () => {});
+                // Fallback para webcams de PC
+                html5QrcodeScanner.start({ facingMode: "user" }, config, 
+                    (text) => { ultimoCodigoBarras = text; processarLeitura(text); }, 
+                    () => {}
+                );
             });
         }
 
-        // 3. Fluxo principal quando encontra um código de barras
-        async function onScanSuccess(decodedText, decodedResult) {
+        // Função que tira a foto (flash) e processa
+        async function processarLeitura(codigoBarras) {
             if (isProcessing) return; 
             isProcessing = true;
+            
             tocarBip();
-            html5QrcodeScanner.pause(); 
+            
+            // Efeito de Flash na câmera (Tirar Foto) sem pausar o vídeo
+            const videoContainer = document.getElementById('reader-container');
+            videoContainer.classList.add('flash-effect');
+            setTimeout(() => videoContainer.classList.remove('flash-effect'), 300);
 
             const statusOcr = document.getElementById('status-ocr');
             statusOcr.classList.remove('hidden');
 
             try {
-                // Captura o frame exato do vídeo em alta resolução
+                // Captura o frame exato do vídeo instantaneamente
                 const video = document.querySelector('#reader video');
                 const canvas = document.getElementById('canvas-foto');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Executa o Tesseract para ler o texto na imagem
+                // Executa OCR em segundo plano
                 const { data: { text } } = await Tesseract.recognize(canvas, 'por');
 
-                // 4. Processamento dos Dados
+                // Regex para capturar código numérico curto
                 const matchNumeros = text.match(/\b\d{3,4}\b/);
                 const codigoCurto = matchNumeros ? matchNumeros[0] : "SEM-COD";
 
+                // Pega a melhor linha como nome do produto
                 const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.match(/^\d+$/));
                 let nomeProduto = linhas.length > 0 ? linhas.reduce((a, b) => a.length > b.length ? a : b) : "Produto Genérico";
                 nomeProduto = nomeProduto.replace(/[\r\n]+/g, " ");
 
-                const linhaFinal = `${decodedText} - ${nomeProduto} - ${codigoCurto}\n`;
+                const linhaFinal = `${codigoBarras} - ${nomeProduto} - ${codigoCurto}\n`;
 
-                // 5. Salva direto no arquivo .txt
                 await salvarNoArquivo(linhaFinal);
 
                 const logs = document.getElementById('logs');
                 logs.innerText = linhaFinal + logs.innerText;
 
             } catch (error) {
-                console.error("Erro no processamento OCR:", error);
-                alert("Erro ao ler o texto. Tente melhorar a luz e tente novamente.");
+                console.error("Erro OCR:", error);
             } finally {
+                // Trava novas leituras por 2.5 segundos para dar tempo de tirar o produto da frente,
+                // mas A CÂMERA CONTINUA LIGADA E FOCANDO O TEMPO TODO.
                 setTimeout(() => {
                     statusOcr.classList.add('hidden');
                     isProcessing = false;
-                    html5QrcodeScanner.resume();
-                }, 2000);
+                }, 2500);
             }
         }
 
-        // 6. Função para gravar texto no arquivo
+        // Botão Manual e Tecla Espaço para "Tirar Foto" à força
+        document.getElementById('btn-foto-manual').addEventListener('click', () => {
+            if (!fileHandle) return alert("Abra o arquivo de inventário primeiro.");
+            processarLeitura(ultimoCodigoBarras); // Usa o último código de barras que a câmera viu
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && fileHandle && !isProcessing) {
+                e.preventDefault(); // Evita rolar a página
+                document.getElementById('btn-foto-manual').click();
+            }
+        });
+
+        // Salvar no arquivo
         async function salvarNoArquivo(texto) {
             if (!fileHandle) return;
             const writable = await fileHandle.createWritable({ keepExistingData: true });
