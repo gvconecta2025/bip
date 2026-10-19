@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="pt-PT">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventário Inteligente - Loja</title>
-    <!-- Tailwind para um aspeto limpo e profissional -->
+    <!-- Tailwind para um aspecto limpo e profissional -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Bibliotecas de Leitura de Código de Barras e OCR -->
     <script src="https://unpkg.com/html5-qrcode"></script>
@@ -16,18 +16,18 @@
         
         <div class="mb-6">
             <button id="btn-iniciar-arquivo" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full md:w-auto">
-                1. Abrir Ficheiro de Inventário (.txt)
+                1. Abrir Arquivo de Inventário (.txt)
             </button>
-            <p class="text-sm text-gray-500 mt-2" id="status-arquivo">Nenhum ficheiro selecionado.</p>
+            <p class="text-sm text-gray-500 mt-2" id="status-arquivo">Nenhum arquivo selecionado.</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Área da Câmara -->
+            <!-- Área da Câmera -->
             <div>
-                <h2 class="text-lg font-semibold mb-2">Câmara (Logitech C930e)</h2>
+                <h2 class="text-lg font-semibold mb-2">Câmera (Logitech C930e)</h2>
                 <div id="reader" class="w-full bg-black rounded overflow-hidden shadow-inner"></div>
                 <div id="status-ocr" class="mt-2 text-sm text-blue-600 font-semibold animate-pulse hidden">
-                    A processar o texto da embalagem... Aguarde.
+                    Processando o texto da embalagem... Aguarde.
                 </div>
             </div>
 
@@ -58,62 +58,61 @@
             osc.stop(ctx.currentTime + 0.15);
         }
 
-        // 1. Ligar ao ficheiro de texto no computador
+        // 1. Ligar ao arquivo de texto no computador
         document.getElementById('btn-iniciar-arquivo').addEventListener('click', async () => {
             try {
-                // Abre o seletor do Windows para criar ou escolher o ficheiro txt
                 fileHandle = await window.showSaveFilePicker({
                     suggestedName: 'inventario-loja.txt',
                     types: [{ description: 'Documento de Texto', accept: {'text/plain': ['.txt']} }]
                 });
-                document.getElementById('status-arquivo').innerText = `A gravar em: ${fileHandle.name}`;
+                document.getElementById('status-arquivo').innerText = `Gravando em: ${fileHandle.name}`;
                 document.getElementById('status-arquivo').classList.add('text-green-600');
                 
-                // Inicia a câmara apenas após o ficheiro ser selecionado
                 iniciarCamera();
             } catch (err) {
-                console.error("Seleção de ficheiro cancelada.", err);
+                console.error("Seleção de arquivo cancelada.", err);
             }
         });
 
-        // 2. Iniciar a Webcam (Corrigido para PC com Webcam USB)
+        // 2. Iniciar a Webcam (Corrigido: Forçando HD real no parâmetro certo)
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
             
-            // Caixa de leitura mais larga e indicação de resolução ideal
             const config = { 
                 fps: 15, 
-                qrbox: { width: 350, height: 150 },
-                videoConstraints: {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                }
+                qrbox: { width: 350, height: 150 }
             };
 
-            // "user" indica câmara frontal, que é como o PC reconhece as webcams USB
+            // O segredo da qualidade: Passar a resolução máxima exigida direto no primeiro parâmetro
+            const restricoesCamera = {
+                width: { min: 1280, ideal: 1920 },
+                height: { min: 720, ideal: 1080 }
+            };
+
             html5QrcodeScanner.start(
-                { facingMode: "user" },
+                restricoesCamera,
                 config,
                 onScanSuccess,
-                (errorMessage) => { /* Ignora os erros contínuos de código não detetado */ }
+                (errorMessage) => { /* Ignora avisos de ausência de código */ }
             ).catch(err => {
-                console.error("Erro ao iniciar câmara:", err);
-                alert("Erro técnico ao aceder à lente. Verifique as permissões. Detalhe: " + err);
+                console.warn("Falha ao forçar 1080p, tentando fallback de segurança...", err);
+                // Fallback caso a porta USB esteja limitando a banda
+                html5QrcodeScanner.start({ facingMode: "user" }, config, onScanSuccess, () => {});
             });
         }
 
         // 3. Fluxo principal quando encontra um código de barras
         async function onScanSuccess(decodedText, decodedResult) {
-            if (isProcessing) return; // Evita múltiplas leituras em simultâneo
+            if (isProcessing) return; 
             isProcessing = true;
             tocarBip();
-            html5QrcodeScanner.pause(); // Pausa o vídeo para captar uma imagem nítida
+            html5QrcodeScanner.pause(); 
 
             const statusOcr = document.getElementById('status-ocr');
             statusOcr.classList.remove('hidden');
 
             try {
-                // Capta o frame exato do vídeo
+                // Captura o frame exato do vídeo em alta resolução
                 const video = document.querySelector('#reader video');
                 const canvas = document.getElementById('canvas-foto');
                 canvas.width = video.videoWidth;
@@ -123,32 +122,26 @@
                 // Executa o Tesseract para ler o texto na imagem
                 const { data: { text } } = await Tesseract.recognize(canvas, 'por');
 
-                // 4. Processamento dos Dados (Regex e Limpeza)
-                // Procura um código numérico isolado de 3 a 4 algarismos
+                // 4. Processamento dos Dados
                 const matchNumeros = text.match(/\b\d{3,4}\b/);
                 const codigoCurto = matchNumeros ? matchNumeros[0] : "SEM-COD";
 
-                // Capta a linha mais longa (provável nome da película/capa)
                 const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.match(/^\d+$/));
                 let nomeProduto = linhas.length > 0 ? linhas.reduce((a, b) => a.length > b.length ? a : b) : "Produto Genérico";
-                // Limpa quebras de linha acidentais
                 nomeProduto = nomeProduto.replace(/[\r\n]+/g, " ");
 
-                // Monta a linha final
                 const linhaFinal = `${decodedText} - ${nomeProduto} - ${codigoCurto}\n`;
 
-                // 5. Guarda diretamente no ficheiro .txt no PC do utilizador
+                // 5. Salva direto no arquivo .txt
                 await salvarNoArquivo(linhaFinal);
 
-                // Atualiza o ecrã
                 const logs = document.getElementById('logs');
                 logs.innerText = linhaFinal + logs.innerText;
 
             } catch (error) {
-                console.error("Erro no processamento:", error);
-                alert("Erro ao ler o texto da embalagem. Tente novamente com melhor iluminação.");
+                console.error("Erro no processamento OCR:", error);
+                alert("Erro ao ler o texto. Tente melhorar a luz e tente novamente.");
             } finally {
-                // Aguarda 2 segundos e retoma a câmara para o próximo artigo
                 setTimeout(() => {
                     statusOcr.classList.add('hidden');
                     isProcessing = false;
@@ -157,11 +150,10 @@
             }
         }
 
-        // 6. Função nativa para injetar texto no ficheiro
+        // 6. Função para gravar texto no arquivo
         async function salvarNoArquivo(texto) {
             if (!fileHandle) return;
             const writable = await fileHandle.createWritable({ keepExistingData: true });
-            // Vai para o final do ficheiro antes de escrever
             const file = await fileHandle.getFile();
             await writable.write({ type: 'write', position: file.size, data: texto });
             await writable.close();
