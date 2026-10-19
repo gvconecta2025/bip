@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventário Inteligente - Loja</title>
-    <!-- Tailwind para um visual limpo e profissional -->
+    <!-- Tailwind para um aspeto limpo e profissional -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Bibliotecas de Leitura e OCR -->
+    <!-- Bibliotecas de Leitura de Código de Barras e OCR -->
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
@@ -16,18 +16,18 @@
         
         <div class="mb-6">
             <button id="btn-iniciar-arquivo" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full md:w-auto">
-                1. Abrir Arquivo de Inventário (.txt)
+                1. Abrir Ficheiro de Inventário (.txt)
             </button>
-            <p class="text-sm text-gray-500 mt-2" id="status-arquivo">Nenhum arquivo selecionado.</p>
+            <p class="text-sm text-gray-500 mt-2" id="status-arquivo">Nenhum ficheiro selecionado.</p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Área da Câmera -->
+            <!-- Área da Câmara -->
             <div>
-                <h2 class="text-lg font-semibold mb-2">Câmera (Logitech C930e)</h2>
+                <h2 class="text-lg font-semibold mb-2">Câmara (Logitech C930e)</h2>
                 <div id="reader" class="w-full bg-black rounded overflow-hidden shadow-inner"></div>
                 <div id="status-ocr" class="mt-2 text-sm text-blue-600 font-semibold animate-pulse hidden">
-                    Processando texto da embalagem... Aguarde.
+                    A processar o texto da embalagem... Aguarde.
                 </div>
             </div>
 
@@ -39,7 +39,7 @@
         </div>
     </div>
 
-    <!-- Canvas oculto para tirar foto do vídeo para o OCR -->
+    <!-- Canvas oculto para captar a fotografia do vídeo para o OCR -->
     <canvas id="canvas-foto" class="hidden"></canvas>
 
     <script>
@@ -47,7 +47,7 @@
         let html5QrcodeScanner;
         let isProcessing = false;
 
-        // Função para emitir o Bip sonoro
+        // Função para emitir o aviso sonoro (Bip)
         function tocarBip() {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = ctx.createOscillator();
@@ -58,80 +58,77 @@
             osc.stop(ctx.currentTime + 0.15);
         }
 
-        // 1. Conectar ao arquivo de texto no computador
+        // 1. Ligar ao ficheiro de texto no computador
         document.getElementById('btn-iniciar-arquivo').addEventListener('click', async () => {
             try {
-                // Abre o seletor do Windows para criar ou escolher o arquivo txt
+                // Abre o seletor do Windows para criar ou escolher o ficheiro txt
                 fileHandle = await window.showSaveFilePicker({
                     suggestedName: 'inventario-loja.txt',
                     types: [{ description: 'Documento de Texto', accept: {'text/plain': ['.txt']} }]
                 });
-                document.getElementById('status-arquivo').innerText = `Gravando em: ${fileHandle.name}`;
+                document.getElementById('status-arquivo').innerText = `A gravar em: ${fileHandle.name}`;
                 document.getElementById('status-arquivo').classList.add('text-green-600');
                 
-                // Inicia a câmera apenas após o arquivo ser selecionado
+                // Inicia a câmara apenas após o ficheiro ser selecionado
                 iniciarCamera();
             } catch (err) {
-                console.error("Seleção de arquivo cancelada.", err);
+                console.error("Seleção de ficheiro cancelada.", err);
             }
         });
 
-        // 2. Iniciar a Webcam (Forçando alta resolução para a Logitech)
+        // 2. Iniciar a Webcam (Corrigido para PC com Webcam USB)
         function iniciarCamera() {
             html5QrcodeScanner = new Html5Qrcode("reader");
             
-            // Caixa de leitura mais larga (ideal para códigos de barras compridos)
+            // Caixa de leitura mais larga e indicação de resolução ideal
             const config = { 
                 fps: 15, 
                 qrbox: { width: 350, height: 150 },
-                aspectRatio: 1.777778 // Proporção 16:9
+                videoConstraints: {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
             };
 
-            // Força o navegador a extrair o máximo da C930e (HD ou FullHD)
-            const constraints = {
-                facingMode: "environment",
-                width: { min: 1280, ideal: 1920 },
-                height: { min: 720, ideal: 1080 }
-            };
-
+            // "user" indica câmara frontal, que é como o PC reconhece as webcams USB
             html5QrcodeScanner.start(
-                constraints,
+                { facingMode: "user" },
                 config,
                 onScanSuccess,
-                (errorMessage) => { /* Silencia os erros contínuos de "código não encontrado" */ }
+                (errorMessage) => { /* Ignora os erros contínuos de código não detetado */ }
             ).catch(err => {
-                console.error("Erro ao iniciar câmera:", err);
-                alert("Verifique se a câmera está sendo usada por outro app ou se você negou as permissões.");
+                console.error("Erro ao iniciar câmara:", err);
+                alert("Erro técnico ao aceder à lente. Verifique as permissões. Detalhe: " + err);
             });
         }
 
         // 3. Fluxo principal quando encontra um código de barras
         async function onScanSuccess(decodedText, decodedResult) {
-            if (isProcessing) return; // Evita múltiplas leituras simultâneas
+            if (isProcessing) return; // Evita múltiplas leituras em simultâneo
             isProcessing = true;
             tocarBip();
-            html5QrcodeScanner.pause(); // Pausa o vídeo para tirar a foto nítida
+            html5QrcodeScanner.pause(); // Pausa o vídeo para captar uma imagem nítida
 
             const statusOcr = document.getElementById('status-ocr');
             statusOcr.classList.remove('hidden');
 
             try {
-                // Captura o frame exato do vídeo
+                // Capta o frame exato do vídeo
                 const video = document.querySelector('#reader video');
                 const canvas = document.getElementById('canvas-foto');
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                // Executa o Tesseract para ler a imagem
+                // Executa o Tesseract para ler o texto na imagem
                 const { data: { text } } = await Tesseract.recognize(canvas, 'por');
 
                 // 4. Processamento dos Dados (Regex e Limpeza)
-                // Procura o código de 3 ou 4 algarismos isolados
+                // Procura um código numérico isolado de 3 a 4 algarismos
                 const matchNumeros = text.match(/\b\d{3,4}\b/);
                 const codigoCurto = matchNumeros ? matchNumeros[0] : "SEM-COD";
 
-                // Pega a linha mais longa (provável nome da película/capinha)
+                // Capta a linha mais longa (provável nome da película/capa)
                 const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.match(/^\d+$/));
                 let nomeProduto = linhas.length > 0 ? linhas.reduce((a, b) => a.length > b.length ? a : b) : "Produto Genérico";
                 // Limpa quebras de linha acidentais
@@ -140,18 +137,18 @@
                 // Monta a linha final
                 const linhaFinal = `${decodedText} - ${nomeProduto} - ${codigoCurto}\n`;
 
-                // 5. Salva direto no arquivo .txt no PC do usuário
+                // 5. Guarda diretamente no ficheiro .txt no PC do utilizador
                 await salvarNoArquivo(linhaFinal);
 
-                // Atualiza a interface
+                // Atualiza o ecrã
                 const logs = document.getElementById('logs');
                 logs.innerText = linhaFinal + logs.innerText;
 
             } catch (error) {
                 console.error("Erro no processamento:", error);
-                alert("Erro ao ler o texto. Tente novamente com mais luz.");
+                alert("Erro ao ler o texto da embalagem. Tente novamente com melhor iluminação.");
             } finally {
-                // Aguarda 2 segundos e retoma a câmera para o próximo produto
+                // Aguarda 2 segundos e retoma a câmara para o próximo artigo
                 setTimeout(() => {
                     statusOcr.classList.add('hidden');
                     isProcessing = false;
@@ -160,11 +157,11 @@
             }
         }
 
-        // 6. Função nativa para injetar texto no arquivo
+        // 6. Função nativa para injetar texto no ficheiro
         async function salvarNoArquivo(texto) {
             if (!fileHandle) return;
             const writable = await fileHandle.createWritable({ keepExistingData: true });
-            // Vai para o final do arquivo antes de escrever
+            // Vai para o final do ficheiro antes de escrever
             const file = await fileHandle.getFile();
             await writable.write({ type: 'write', position: file.size, data: texto });
             await writable.close();
