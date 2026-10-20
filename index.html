@@ -115,4 +115,95 @@
                 
                 // Atualiza o estado visual indicando sucesso
                 const statusP = document.getElementById('status-arquivo');
-                statusP.innerHTML = `<span class="text
+                statusP.innerHTML = `<span class="text-green-600 font-bold">✓ Ligado ao ficheiro:</span> ${fileHandle.name}`;
+                
+                // Ativa a área de leitura
+                areaLeitura.classList.remove('opacity-50', 'pointer-events-none');
+                inputBip.disabled = false;
+                
+                // Força o foco no input
+                setTimeout(() => inputBip.focus(), 100);
+
+            } catch (err) {
+                console.error("Operação cancelada pelo utilizador.", err);
+            }
+        });
+
+        // 2. Garantir que o cursor está SEMPRE no input (Prática de ouro para leitores físicos)
+        // Se o utilizador clicar fora, o sistema puxa o foco de volta automaticamente
+        document.addEventListener('click', (e) => {
+            if (fileHandle && !inputBip.disabled && e.target.id !== 'btn-iniciar-arquivo') {
+                inputBip.focus();
+            }
+        });
+
+        // 3. Ouvir o Leitor de Código de Barras
+        inputBip.addEventListener('keypress', async (e) => {
+            // O leitor físico programa um "Enter" no final de cada código que envia
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Evita recarregar a página ou submeter formulários invisíveis
+                
+                const codigoLido = inputBip.value.trim();
+                inputBip.value = ''; // Limpa o campo IMEDIATAMENTE para estar pronto para o próximo bip
+                
+                if (codigoLido !== "") {
+                    await processarCodigo(codigoLido);
+                }
+            }
+        });
+
+        // 4. Processar e Guardar o Código
+        async function processarCodigo(codigo) {
+            // Adicionamos a data e hora para manter o inventário organizado
+            const agora = new Date();
+            const horaFormatada = agora.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit', second:'2-digit' });
+            
+            // O formato que será guardado no Bloco de Notas
+            const linhaFinal = `[${horaFormatada}] ${codigo}\n`;
+
+            try {
+                // Grava fisicamente no ficheiro .txt
+                await salvarNoArquivo(linhaFinal);
+
+                // Feedback Visual e Sonoro de Sucesso
+                tocarBipSucesso();
+                atualizarInterface(linhaFinal);
+                
+            } catch (error) {
+                console.error("Erro ao guardar o ficheiro:", error);
+                alert("Erro ao gravar. Verifique se o ficheiro .txt não está aberto noutro programa bloqueando o acesso.");
+            }
+        }
+
+        // 5. Atualiza o ecrã para o utilizador ver o que leu
+        function atualizarInterface(linha) {
+            logVazio.style.display = 'none'; // Esconde a mensagem "Vazio"
+            
+            // Adiciona a nova linha no topo
+            logsDiv.innerText = linha + logsDiv.innerText;
+            
+            // Efeito visual (Piscar a verde)
+            logsContainer.classList.remove('leitura-sucesso');
+            void logsContainer.offsetWidth; // Força o reflow do CSS para reiniciar a animação
+            logsContainer.classList.add('leitura-sucesso');
+
+            // Atualiza o contador
+            contagemItens++;
+            contadorSpan.innerText = `${contagemItens} itens`;
+        }
+
+        // 6. Função nativa do navegador para injetar texto no ficheiro
+        async function salvarNoArquivo(texto) {
+            if (!fileHandle) return;
+            // Abre o canal de escrita preservando o que já lá estava
+            const writable = await fileHandle.createWritable({ keepExistingData: true });
+            // Descobre o tamanho atual do ficheiro para escrever no final
+            const file = await fileHandle.getFile();
+            // Escreve os novos dados
+            await writable.write({ type: 'write', position: file.size, data: texto });
+            // Fecha o ficheiro (salva no disco)
+            await writable.close();
+        }
+    </script>
+</body>
+</html>
