@@ -1,54 +1,48 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-PT">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventário Inteligente - Loja</title>
     <!-- Tailwind para visual limpo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Tesseract para OCR (Leitura de Texto) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        /* Efeito de Flash da Câmera */
-        .flash-effect {
-            animation: flashAnimation 0.3s ease-out;
-        }
+        .flash-effect { animation: flashAnimation 0.3s ease-out; }
         @keyframes flashAnimation {
             0% { opacity: 1; }
             50% { opacity: 0.3; background-color: white; }
             100% { opacity: 1; }
         }
-        /* Garante que a caixa de vídeo não suma antes da câmera ligar */
-        #reader {
-            width: 100%;
-            min-height: 300px;
-        }
+        /* Espelho para a câmara parecer natural */
+        #video-camera { transform: scaleX(-1); }
     </style>
 </head>
 <body class="bg-gray-50 p-6 font-sans">
     <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
-        <h1 class="text-2xl font-bold text-gray-800 mb-4">Scanner de Inventário</h1>
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Scanner de Inventário (Com Leitor Físico)</h1>
         
         <div class="mb-6 flex flex-col md:flex-row gap-4">
             <button id="btn-iniciar-arquivo" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded shadow">
-                1. Abrir Arquivo (.txt)
+                1. Abrir Ficheiro (.txt)
             </button>
             
-            <button id="btn-foto-manual" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded shadow flex-1 opacity-50 cursor-not-allowed" disabled>
-                📸 2. Tirar Foto Manualmente (Espaço)
-            </button>
+            <!-- Campo onde o leitor físico vai "escrever" o código -->
+            <input type="text" id="input-bip" placeholder="Aguardando bip do leitor físico..." 
+                   class="flex-1 border-2 border-blue-400 p-3 rounded text-lg font-bold bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50" disabled>
         </div>
-        <p class="text-sm text-gray-500 mb-6" id="status-arquivo">Nenhum arquivo selecionado.</p>
+        <p class="text-sm text-gray-500 mb-6" id="status-arquivo">Nenhum ficheiro selecionado.</p>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Área da Câmera -->
+            <!-- Área da Câmara -->
             <div class="relative">
-                <h2 class="text-lg font-semibold mb-2">Câmera (Foco Contínuo em HD)</h2>
-                <div id="reader-container" class="w-full bg-black rounded overflow-hidden shadow-inner relative">
-                    <div id="reader"></div>
+                <h2 class="text-lg font-semibold mb-2">Webcam para Textos (OCR)</h2>
+                <div id="video-container" class="w-full bg-black rounded overflow-hidden shadow-inner relative flex justify-center items-center" style="min-height: 250px;">
+                    <video id="video-camera" autoplay playsinline class="w-full"></video>
                 </div>
                 <div id="status-ocr" class="mt-2 text-sm text-blue-600 font-semibold animate-pulse hidden">
-                    Processando imagem... Aguarde.
+                    A extrair nome e códigos... Aguarde.
                 </div>
             </div>
 
@@ -65,82 +59,68 @@
 
     <script>
         let fileHandle;
-        let html5QrcodeScanner;
         let isProcessing = false;
-        let ultimoCodigoBarras = "COD-MANUAL";
+        const inputBip = document.getElementById('input-bip');
+        const videoElement = document.getElementById('video-camera');
 
-        // Emite o Bip
-        function tocarBip() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, ctx.currentTime);
-            osc.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.15);
-        }
-
-        // Seleciona o arquivo .txt e liga a câmera
+        // Ligar ao ficheiro de texto
         document.getElementById('btn-iniciar-arquivo').addEventListener('click', async () => {
             try {
                 fileHandle = await window.showSaveFilePicker({
                     suggestedName: 'inventario-loja.txt',
                     types: [{ description: 'Documento de Texto', accept: {'text/plain': ['.txt']} }]
                 });
-                document.getElementById('status-arquivo').innerText = `Gravando em: ${fileHandle.name}`;
+                document.getElementById('status-arquivo').innerText = `A gravar em: ${fileHandle.name}`;
                 document.getElementById('status-arquivo').classList.add('text-green-600');
                 
-                // Ativa o botão de foto manual
-                const btnFoto = document.getElementById('btn-foto-manual');
-                btnFoto.classList.remove('opacity-50', 'cursor-not-allowed');
-                btnFoto.disabled = false;
+                // Desbloqueia o campo do leitor físico e coloca o cursor lá
+                inputBip.disabled = false;
+                inputBip.focus();
 
                 iniciarCamera();
             } catch (err) {
-                console.error("Seleção de arquivo cancelada.", err);
+                console.error("Seleção cancelada.", err);
             }
         });
 
-        // Inicia a câmera com as regras corrigidas
-        function iniciarCamera() {
-            html5QrcodeScanner = new Html5Qrcode("reader");
-            
-            // O primeiro parâmetro (Obrigatório ter apenas UMA chave, o erro foi aqui)
-            const cameraConfig = { facingMode: "user" };
-
-            // O segundo parâmetro (Aqui é onde as resoluções de Alta Definição devem ficar)
-            const config = { 
-                fps: 15, 
-                qrbox: { width: 350, height: 150 },
-                videoConstraints: {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                }
-            };
-
-            html5QrcodeScanner.start(
-                cameraConfig,
-                config,
-                (decodedText) => {
-                    ultimoCodigoBarras = decodedText;
-                    processarLeitura(decodedText);
-                },
-                () => { /* Ignora ausência de código em tempo real */ }
-            ).catch(err => {
-                console.error("Erro ao iniciar a câmera: ", err);
-                alert("Erro ao ligar a lente. Detalhe: " + err);
-            });
+        // Inicia a câmara de forma nativa e muito mais leve (sem biblioteca extra)
+        async function iniciarCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 1080 } }
+                });
+                videoElement.srcObject = stream;
+            } catch (err) {
+                console.error("Erro na câmara:", err);
+                alert("Erro ao aceder à câmara. Verifique as permissões.");
+            }
         }
 
-        // Função que tira a foto (flash) sem pausar o vídeo e processa o texto
-        async function processarLeitura(codigoBarras) {
-            if (isProcessing) return; 
+        // Mantém o cursor sempre focado no input para não perder nenhum Bip
+        document.addEventListener('click', () => {
+            if (!inputBip.disabled) inputBip.focus();
+        });
+
+        // Ouve a ação do Leitor de Código de Barras Físico
+        inputBip.addEventListener('keypress', (e) => {
+            // O leitor físico envia um "Enter" no final da leitura
+            if (e.key === 'Enter') {
+                const codigoLido = inputBip.value.trim();
+                inputBip.value = ''; // Limpa o campo imediatamente
+                
+                if (codigoLido && !isProcessing) {
+                    processarLeituraComFoto(codigoLido);
+                }
+            }
+        });
+
+        // Tira a foto pela webcam e junta com o código do leitor físico
+        async function processarLeituraComFoto(codigoBarras) {
             isProcessing = true;
+            inputBip.disabled = true; // Pausa a entrada para não atropelar leituras
             
-            tocarBip();
-            
-            // Efeito de Flash na câmera (Tirar Foto)
-            const videoContainer = document.getElementById('reader-container');
+            // Efeito de Flash na câmara
+            const videoContainer = document.getElementById('video-container');
             videoContainer.classList.add('flash-effect');
             setTimeout(() => videoContainer.classList.remove('flash-effect'), 300);
 
@@ -148,25 +128,29 @@
             statusOcr.classList.remove('hidden');
 
             try {
-                // Captura a foto da webcam com ela rodando
-                const video = document.querySelector('#reader video');
+                // Tira a fotografia nativa
                 const canvas = document.getElementById('canvas-foto');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.width = videoElement.videoWidth;
+                canvas.height = videoElement.videoHeight;
+                // Como a imagem está espelhada no ecrã para conforto do utilizador, temos de a virar ao contrário no canvas para o OCR conseguir ler
+                const ctx = canvas.getContext('2d');
+                ctx.translate(canvas.width, 0);
+                ctx.scale(-1, 1);
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
                 // Executa OCR na foto tirada
                 const { data: { text } } = await Tesseract.recognize(canvas, 'por');
 
-                // Procura o código numérico curto (3 ou 4 dígitos)
+                // Procura o código numérico de 3 ou 4 dígitos
                 const matchNumeros = text.match(/\b\d{3,4}\b/);
                 const codigoCurto = matchNumeros ? matchNumeros[0] : "SEM-COD";
 
-                // Pega a melhor linha como nome do produto
+                // Pega a linha como nome do produto
                 const linhas = text.split('\n').map(l => l.trim()).filter(l => l.length > 5 && !l.match(/^\d+$/));
                 let nomeProduto = linhas.length > 0 ? linhas.reduce((a, b) => a.length > b.length ? a : b) : "Produto Genérico";
                 nomeProduto = nomeProduto.replace(/[\r\n]+/g, " ");
 
+                // Junta o código do leitor físico + os textos da Logitech
                 const linhaFinal = `${codigoBarras} - ${nomeProduto} - ${codigoCurto}\n`;
 
                 await salvarNoArquivo(linhaFinal);
@@ -176,30 +160,16 @@
 
             } catch (error) {
                 console.error("Erro OCR:", error);
+                alert("Falha ao extrair os textos. Aponte novamente e dispare o leitor.");
             } finally {
-                // Trava o scanner por 2.5 segundos para você ter tempo de tirar o produto da frente
-                // A CÂMERA CONTINUA LIGADA E FILMANDO NORMALMENTE.
-                setTimeout(() => {
-                    statusOcr.classList.add('hidden');
-                    isProcessing = false;
-                }, 2500);
+                statusOcr.classList.add('hidden');
+                isProcessing = false;
+                inputBip.disabled = false;
+                inputBip.focus(); // Devolve o cursor para o próximo produto
             }
         }
 
-        // Eventos do Botão Manual e Tecla Espaço (Caso o código de barras falhe)
-        document.getElementById('btn-foto-manual').addEventListener('click', () => {
-            if (!fileHandle) return alert("Abra o arquivo de inventário primeiro.");
-            processarLeitura(ultimoCodigoBarras);
-        });
-
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && fileHandle && !isProcessing) {
-                e.preventDefault(); // Evita rolar a página
-                document.getElementById('btn-foto-manual').click();
-            }
-        });
-
-        // Salvar sorrateiramente no arquivo .txt
+        // Grava no ficheiro .txt
         async function salvarNoArquivo(texto) {
             if (!fileHandle) return;
             const writable = await fileHandle.createWritable({ keepExistingData: true });
